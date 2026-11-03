@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
 import logging
@@ -25,6 +26,17 @@ class DlklapError(Exception):
 
 class DlklapAuthError(DlklapError):
     """Authentication error."""
+
+
+def _decode_alias(raw_alias: str | None) -> str:
+    """Decode base64 device alias returned by TP-Link Cloud API."""
+    if not raw_alias:
+        return ""
+    try:
+        decoded_bytes = base64.b64decode(raw_alias.strip(), validate=True)
+        return decoded_bytes.decode("utf-8").strip()
+    except Exception:
+        return raw_alias.strip()
 
 
 def _sha(*parts: bytes) -> bytes:
@@ -345,7 +357,10 @@ class DlklapApi:
             for d in devices
             if str(d.get("deviceModel", "")).upper().startswith("DL")
         ]
-        found_aliases = [str(d.get("alias") or "<unknown>") for d in dl_locks]
+        found_aliases = [
+            f"'{_decode_alias(d.get('alias'))}' (raw: {d.get('alias')})"
+            for d in dl_locks
+        ]
         self.log.debug(
             "DL device discovery: requested lock alias='%s', found %s DL devices: %s",
             self.lock_name,
@@ -358,12 +373,28 @@ class DlklapApi:
                 "Verify this TP-Link account owns at least one DL lock in the Tapo app."
             )
             raise DlklapError("No DL-series lock devices found on this TP-Link account")
-        if len(dl_locks) == 1:
-            self.device_id = dl_locks[0]["deviceId"]
-            return
-        match = next((d for d in dl_locks if d.get("alias") == self.lock_name), None)
+
+        # Match by decoded alias (case-insensitive), raw alias, or deviceId
+        target = self.lock_name.strip()
+        match = None
+        for d in dl_locks:
+            raw_alias = str(d.get("alias") or "").strip()
+            decoded = _decode_alias(raw_alias)
+            dev_id = str(d.get("deviceId") or "").strip()
+            if (
+                target.lower() == decoded.lower()
+                or target == raw_alias
+                or target == dev_id
+            ):
+                match = d
+                break
+
+        # Fallback to single lock if only 1 device on account
+        if not match and len(dl_locks) == 1:
+            match = dl_locks[0]
+
         if not match:
-            aliases = ", ".join(d.get("alias", "<unknown>") for d in dl_locks)
+            aliases = ", ".join(f"'{_decode_alias(d.get('alias'))}'" for d in dl_locks)
             self.log.error(
                 "Lock alias mismatch: configured name='%s', available DL aliases=[%s]. "
                 "Update integration name to match the Tapo app alias exactly.",

@@ -39,9 +39,6 @@ class TapoDl100ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
-            await self.async_set_unique_id(f"tapo_dl100::{user_input[CONF_NAME]}")
-            self._abort_if_unique_id_configured()
-
             try:
                 session = async_get_clientsession(self.hass)
                 api = DlklapApi(
@@ -61,9 +58,17 @@ class TapoDl100ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except Exception:  # noqa: BLE001
                 errors["base"] = "unknown"
             else:
+                unique_id = f"tapo_dl100::{api.device_id}" if api.device_id else f"tapo_dl100::{user_input[CONF_NAME]}"
+                await self.async_set_unique_id(unique_id)
+                self._abort_if_unique_id_configured()
+
                 return self.async_create_entry(
                     title=user_input[CONF_NAME],
-                    data=user_input,
+                    data={
+                        **user_input,
+                        "device_id": api.device_id,
+                        "terminal_uuid": api.terminal_uuid,
+                    },
                 )
 
         schema = vol.Schema(
