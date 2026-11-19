@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_NAME, PERCENTAGE, EntityCategory
+from homeassistant.const import PERCENTAGE, EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .api import DeviceInfo
 from .const import DOMAIN
 from .coordinator import Dl100Coordinator
+from .entity import Dl100Entity
 
 
 async def async_setup_entry(
@@ -25,25 +25,18 @@ async def async_setup_entry(
     async_add_entities([Dl100BatterySensor(entry, coordinator)])
 
 
-class Dl100BatterySensor(CoordinatorEntity[Dl100Coordinator], SensorEntity):
+class Dl100BatterySensor(Dl100Entity, SensorEntity):
     """Battery level sensor for a Tapo DL100 lock."""
 
-    _attr_has_entity_name = True
-    _attr_translation_key = "battery"
+    # No name or translation key: with the battery device class and a device,
+    # Home Assistant names it "<lock name> Battery" and picks a level icon.
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_device_class = SensorDeviceClass.BATTERY
-    _attr_icon = "mdi:battery"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, entry: ConfigEntry, coordinator: Dl100Coordinator) -> None:
-        super().__init__(coordinator)
-        self._entry = entry
+        super().__init__(entry, coordinator)
         self._attr_unique_id = f"{entry.entry_id}_battery"
-        self._attr_name = f"{entry.data[CONF_NAME]} Battery"
-
-    @property
-    def available(self) -> bool:
-        return self.coordinator.last_update_success
 
     @property
     def native_value(self) -> int | None:

@@ -1,0 +1,14 @@
+# Throwaway Home Assistant with this repo's integration mounted, for checking
+# the device page, entities, jammed state and relock watch by eye.
+# Start it with dev/up.sh, which also onboards HA and adds the lock from .env.
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:2026.11
+    container_name: tapo-dl100-dev-ha
+    ports:
+      - "8123:8123"
+    volumes:
+      - ./config:/config
+      - ../custom_components/tapo_dl100:/config/custom_components/tapo_dl100:ro
+    environment:
+      - TZ=America/Chicago

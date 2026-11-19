@@ -175,17 +175,23 @@ class DlklapApi:
         cloud_username: str,
         cloud_password: str,
         lock_name: str,
-        ssl_verify: bool,
         websession: aiohttp.ClientSession,
         logger: logging.Logger,
         terminal_uuid: str | None = None,
         device_id: str | None = None,
+        control_key_ssl_verify: bool = False,
     ) -> None:
         self.ip = ip
         self.cloud_username = cloud_username
         self.cloud_password = cloud_password
         self.lock_name = lock_name
-        self.ssl_verify = ssl_verify
+        # TLS is verified on every cloud call except the control-key one.
+        # wap.tplinkcloud.com has a public certificate and receives the
+        # account password, so it is never sent unverified. The control-key
+        # host presents a TP-Link private CA that public roots do not trust
+        # (PROTOCOL.md section 11); it receives only the session token. The
+        # better fix is pinning TP-Link's CA, which is not done yet.
+        self.control_key_ssl_verify = control_key_ssl_verify
         self.websession = websession
         self.log = logger
 
@@ -344,7 +350,6 @@ class DlklapApi:
             f"https://wap.tplinkcloud.com/?token={self._token}",
             headers={"Content-Type": "application/json"},
             body=json.dumps({"method": "getDeviceList"}),
-            ssl=self.ssl_verify,
         )
         if status != 200:
             raise DlklapError(f"getDeviceList HTTP {status}")
@@ -427,7 +432,6 @@ class DlklapApi:
             "https://wap.tplinkcloud.com/",
             headers={"Content-Type": "application/json"},
             body=json.dumps(body),
-            ssl=self.ssl_verify,
         )
         if status != 200:
             raise DlklapAuthError(f"login HTTP {status}")
@@ -479,7 +483,7 @@ class DlklapApi:
                 body=json.dumps(
                     {"secret": secret, "random": random4.hex().upper()}
                 ),
-                ssl=self.ssl_verify,
+                ssl=self.control_key_ssl_verify,
             )
             if ck_status != 200:
                 raise DlklapError(f"control-key HTTP {ck_status}")
