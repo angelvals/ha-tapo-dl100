@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from homeassistant.components.lock import LockEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .api import DeviceInfo
 from .const import DOMAIN
 from .coordinator import Dl100Coordinator
+from .entity import Dl100Entity
+from .logic import is_jammed, is_locked, status_name
 
 
 async def async_setup_entry(
@@ -25,16 +25,15 @@ async def async_setup_entry(
     async_add_entities([Dl100LockEntity(entry, coordinator)])
 
 
-class Dl100LockEntity(CoordinatorEntity[Dl100Coordinator], LockEntity):
+class Dl100LockEntity(Dl100Entity, LockEntity):
     """Representation of a Tapo DL100 lock."""
 
-    _attr_has_entity_name = True
+    # The lock is the device's main feature, so it takes the device name.
+    _attr_name = None
 
     def __init__(self, entry: ConfigEntry, coordinator: Dl100Coordinator) -> None:
-        super().__init__(coordinator)
-        self._entry = entry
+        super().__init__(entry, coordinator)
         self._attr_unique_id = f"{entry.entry_id}_lock"
-        self._attr_name = entry.data[CONF_NAME]
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -47,17 +46,12 @@ class Dl100LockEntity(CoordinatorEntity[Dl100Coordinator], LockEntity):
     @property
     def is_locked(self) -> bool | None:
         info = self.coordinator.data
-        if info is None:
-            return None
-        if info.lock_status == 0:
-            return True
-        if info.lock_status == 1:
-            return False
-        return None
+        return is_locked(info.lock_status if info is not None else None)
 
     @property
-    def available(self) -> bool:
-        return self.coordinator.last_update_success
+    def is_jammed(self) -> bool:
+        info = self.coordinator.data
+        return is_jammed(info.lock_status if info is not None else None)
 
     @property
     def extra_state_attributes(self) -> dict[str, object]:
@@ -66,6 +60,7 @@ class Dl100LockEntity(CoordinatorEntity[Dl100Coordinator], LockEntity):
             return {}
         attrs: dict[str, object] = {
             "lock_status": info.lock_status,
+            "lock_status_name": status_name(info.lock_status),
             "at_low_battery": info.at_low_battery,
             "battery_percentage": info.battery_percentage,
         }
@@ -85,6 +80,7 @@ class Dl100LockEntity(CoordinatorEntity[Dl100Coordinator], LockEntity):
         return attrs
 
     async def async_lock(self, **kwargs) -> None:
+        self.coordinator.cancel_relock_watch()
         self.coordinator.mark_pending_command(True)
         try:
             await self.coordinator.api.set_lock(True)
@@ -97,3 +93,5 @@ class Dl100LockEntity(CoordinatorEntity[Dl100Coordinator], LockEntity):
             await self.coordinator.api.set_lock(False)
         finally:
             await self.coordinator.async_request_refresh()
+        # Only reached when the unlock was confirmed by the lock.
+        self.coordinator.start_relock_watch()

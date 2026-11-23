@@ -26,3 +26,5 @@ env/
 # Ignore only root Homebridge folder
 /homebridge/
 /tools
+# Throwaway HA config from dev/up.sh
+/dev/config/
